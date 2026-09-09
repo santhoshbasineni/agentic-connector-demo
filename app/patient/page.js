@@ -49,14 +49,14 @@ export default function PatientView() {
   }
 
   if (!state) return <div className="muted">Loading…</div>;
-  const hasAppointment = state.appointments.length > 0;
 
   return (
     <div>
       <h1>Patient view</h1>
       <p className="sub">
-        Conversational intake. Try &quot;sore throat for three days&quot; (→ ARR) or
-        &quot;chest pain&quot; (→ EE).
+        Conversational intake. Try &quot;sore throat for three days&quot; (→ ARR),
+        &quot;chest pain&quot; (→ EE), &quot;book an appointment&quot; (→ AU/APR/APC), or ask
+        for the status of your appointments, claims, or lab results.
       </p>
       <div className="pii-note">
         🔒 <b>PII isolation:</b> ID and insurance-card document uploads are handled in a separate,
@@ -67,12 +67,15 @@ export default function PatientView() {
         <div className="chat">
           {state.patientFeed.map((m) => {
             if (m.kind === 'slots') {
+              // A picker is "done" once any appointment was booked after it appeared
+              const bookedAfter = state.appointments.some((a) => a.bookedAt > m.ts);
               return (
                 <div className="msg ai" key={m.id}>
                   <div style={{ marginBottom: 4 }}>
-                    <b>Available appointment slots</b> (case {m.data?.caseId}):
+                    <b>Available appointment slots</b>
+                    {m.data?.caseId ? ` (case ${m.data.caseId})` : ''}:
                   </div>
-                  {hasAppointment ? (
+                  {bookedAfter ? (
                     <div className="muted">✓ Appointment booked — see confirmation below.</div>
                   ) : (
                     <SlotPicker state={state} />
