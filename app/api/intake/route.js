@@ -1,19 +1,23 @@
 import {
   getStore,
-  matchEmergency,
   addPatientEvent,
-  addCase,
-  addPayerRequest,
   detectIntent,
   appointmentStatusSummary,
   claimsStatusSummary,
   labStatusSummary,
   resolveDuePayerRequests,
 } from '@/lib/store';
+import { fireEE, submitARR } from '@/lib/actions';
+import { triage } from '@/lib/triage';
+import { runPatientAgent } from '@/lib/agent';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // real LLM turns can take a while
 
-// IS (Intake Submission) → EE (Emergency Escalation) or ARR (Async Review Request)
+// IS (Intake Submission). With ANTHROPIC_API_KEY set: real Claude triage
+// (conservative, structured) decides EE deterministically, then the
+// MCP-connected agent handles everything else. Without a key: the original
+// keyword triage + intent routing, unchanged, as a graceful fallback.
 export async function POST(request) {
   const { text } = await request.json();
   if (!text || !String(text).trim()) {
@@ -23,19 +27,30 @@ export async function POST(request) {
   resolveDuePayerRequests(); // status answers must reflect live payer state
   addPatientEvent({ role: 'patient', kind: 'text', text });
 
-  const keyword = matchEmergency(text);
-  if (keyword) {
-    const s = getStore();
-    s.eeAlerts.push({ id: `ee-${Date.now()}`, keyword, text, ts: Date.now() });
-    addPatientEvent({
-      role: 'ai',
-      kind: 'EE',
-      text: `🚨 EMERGENCY ESCALATION (EE) — red-flag symptom detected ("${keyword}"). This bypasses the async review queue entirely. Please call 911 or go to the nearest emergency department now. Your care team has been notified.`,
-    });
-    return Response.json({ transaction: 'EE', keyword });
+  // 1) Emergency judgment — a dedicated triage call (or keyword fallback),
+  //    never LLM tool selection. EE stays a deterministic code path.
+  const verdict = await triage(text);
+  if (verdict.emergency) {
+    fireEE(text, verdict.reason);
+    return Response.json({ transaction: 'EE', reason: verdict.reason, triageVia: verdict.via });
   }
 
-  // Non-emergency: route booking/status intents before treating it as symptoms
+  // 2) Non-emergency, LLM available → MCP-connected conversational agent
+  if (process.env.ANTHROPIC_API_KEY) {
+    const result = await runPatientAgent(text);
+    if (result.text) {
+      addPatientEvent({ role: 'ai', kind: 'text', text: result.text });
+      return Response.json({
+        transaction: 'AGENT',
+        mode: result.mode,
+        toolCalls: result.toolCalls,
+      });
+    }
+    // Agent hard-failed — fall through to the legacy path so the demo keeps working
+    console.error('[intake] agent unavailable, using legacy routing:', result.error);
+  }
+
+  // 3) Legacy fallback: keyword intents (booking / status), else ARR
   const intent = detectIntent(text);
   if (intent === 'book') {
     const s = getStore();
@@ -64,18 +79,6 @@ export async function POST(request) {
     return Response.json({ transaction: 'STATUS', intent, summary });
   }
 
-  const c = addCase({
-    source: 'patient',
-    patient: 'Demo Patient',
-    summary: text,
-    aiSuggestion:
-      'AI-suggested disposition: low-acuity presentation. Recommend self-care guidance with 48-hour check-in; escalate to in-person visit only if symptoms worsen. (Physician confirmation required.)',
-  });
-  addPayerRequest('CEC', `Coverage eligibility for Demo Patient (case ${c.id})`);
-  addPatientEvent({
-    role: 'ai',
-    kind: 'ARR',
-    text: `Thanks — no red-flag symptoms detected. I've submitted an Async Review Request (ARR): case ${c.id} is now in the physician review queue. A coverage eligibility check (CEC) was sent to your payer in parallel. You'll hear back here once a physician reviews it.`,
-  });
+  const c = submitARR(text);
   return Response.json({ transaction: 'ARR', caseId: c.id });
 }
