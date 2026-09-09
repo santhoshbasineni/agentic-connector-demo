@@ -23,10 +23,33 @@ resets on server restart. The "AI" is scripted logic.
 | CER/CES | Cost Estimate Request/Response | Auto-created on redirect; patient sees "in-network, est. $45" |
 | Dual-push | Lab result → patient + review queue | Lab view: "Publish result" |
 
+## Real AI layer (optional but recommended)
+
+With `ANTHROPIC_API_KEY` set (in `.env.local`, never committed), the Patient view uses:
+
+- **Real conversational triage** — a Claude API call (`claude-opus-5`, structured
+  JSON output) judges emergency-vs-routine with a deliberately **conservative
+  bias**: when uncertain, it escalates (EE). This judgment happens *before* any
+  tool routing and stays a deterministic code path.
+- **Three MCP servers, one per party** — Reviewing Org, Laboratory, and Payer each
+  expose their operations as MCP tools (`lib/mcp/servers.js`), served over
+  Streamable HTTP at `/api/mcp/{org,lab,payer}/mcp`. The patient agent is
+  configured with all three and the **LLM decides which tool to call** (file an
+  ARR, list/book slots, check coverage, read lab orders...). Tool calls are
+  logged to `toolCallLog` in `/api/state`.
+- Two wiring modes: with `MCP_PUBLIC_BASE_URL` set (and `MCP_MODE` ≠ `local`),
+  the agent uses the Claude API's native `mcp_servers` parameter (Anthropic's
+  servers connect to the public MCP endpoints); otherwise the same MCP servers
+  run in-process and a real MCP client drives them (works on localhost).
+
+Without a key, everything falls back to the original scripted keyword/intent
+logic — the demo still works end to end.
+
 ## Run locally
 
 ```bash
 npm install
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local   # optional, enables real triage + MCP agent
 npm run dev
 ```
 
