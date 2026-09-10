@@ -72,7 +72,22 @@ export default function LabView() {
         </div>
         <p className="muted" style={{ marginBottom: 0 }}>
           These slots are what the lab&apos;s agent exposes for APR/APC booking by other parties.
+          Cancelling a booked collection appointment releases its slot back into this list.
         </p>
+      </div>
+
+      <div className="card">
+        <h2>Booked collection appointments</h2>
+        {state.appointments.filter((a) => a.facility === 'lab' && a.status !== 'cancelled')
+          .length === 0 && <div className="muted">None booked.</div>}
+        {state.appointments
+          .filter((a) => a.facility === 'lab' && a.status !== 'cancelled')
+          .map((a) => (
+            <div key={a.id} style={{ fontSize: 13.5, padding: '3px 0' }}>
+              <span className="badge resolved">{a.updatedAt ? 'MOVED' : 'CONFIRMED'}</span>
+              <b>{a.id}</b> · {a.when} · {a.patient}
+            </div>
+          ))}
       </div>
     </div>
   );

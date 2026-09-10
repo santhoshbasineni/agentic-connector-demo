@@ -3,27 +3,41 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePolledState, post } from '@/lib/usePolledState';
 
-function SlotPicker({ state }) {
+function SlotPicker({ state, specialty }) {
   const [busy, setBusy] = useState(false);
-  const free = state.apptSlots.filter((s) => !s.booked);
+  let free = state.apptSlots.filter((s) => !s.booked);
+  if (specialty) {
+    const matched = free.filter((s) =>
+      s.specialty.toLowerCase().includes(String(specialty).toLowerCase())
+    );
+    if (matched.length) free = matched;
+  }
   if (free.length === 0) return <div className="muted">No slots remaining.</div>;
+  const shown = free.slice(0, 6);
   return (
-    <div className="slotgrid">
-      {free.map((s) => (
-        <button
-          key={s.id}
-          className="slotbtn"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            await post('/api/appointments', { slotId: s.id });
-            setBusy(false);
-          }}
-        >
-          {s.when} · {s.clinic}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="slotgrid">
+        {shown.map((s) => (
+          <button
+            key={s.id}
+            className="slotbtn"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await post('/api/appointments', { slotId: s.id });
+              setBusy(false);
+            }}
+          >
+            {s.when} · {s.practitioner} ({s.specialty})
+          </button>
+        ))}
+      </div>
+      {free.length > shown.length && (
+        <div className="muted" style={{ marginTop: 6 }}>
+          +{free.length - shown.length} more slots available — ask for a specific day or specialty.
+        </div>
+      )}
+    </>
   );
 }
 
@@ -73,12 +87,13 @@ export default function PatientView() {
                 <div className="msg ai" key={m.id}>
                   <div style={{ marginBottom: 4 }}>
                     <b>Available appointment slots</b>
-                    {m.data?.caseId ? ` (case ${m.data.caseId})` : ''}:
+                    {m.data?.caseId ? ` (case ${m.data.caseId})` : ''}
+                    {m.data?.specialty ? ` — ${m.data.specialty}` : ''}:
                   </div>
                   {bookedAfter ? (
                     <div className="muted">✓ Appointment booked — see confirmation below.</div>
                   ) : (
-                    <SlotPicker state={state} />
+                    <SlotPicker state={state} specialty={m.data?.specialty} />
                   )}
                 </div>
               );

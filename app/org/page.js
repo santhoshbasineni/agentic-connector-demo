@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePolledState, post } from '@/lib/usePolledState';
 
 export default function OrgView() {
@@ -9,13 +10,16 @@ export default function OrgView() {
   const open = state.cases.filter((c) => c.status === 'open');
   const claimed = state.cases.filter((c) => c.status === 'claimed');
   const resolved = state.cases.filter((c) => c.status === 'resolved');
+  const orgAppts = state.appointments.filter((a) => a.facility !== 'lab' && a.status !== 'cancelled');
+  const openSlots = state.apptSlots.filter((s) => !s.booked);
 
   return (
     <div>
       <h1>Reviewing Organization view</h1>
       <p className="sub">
         Physician queue. Claim (RC) an open ARR, review the intake + AI-suggested disposition,
-        then Confirm or Redirect (DR).
+        then Confirm or Redirect (DR). ·{' '}
+        <Link href="/org/config">Config: practitioners &amp; availability →</Link>
       </p>
 
       {state.eeAlerts.map((a) => (
@@ -82,6 +86,22 @@ export default function OrgView() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="card">
+        <h2>Booked appointments ({orgAppts.length})</h2>
+        {orgAppts.length === 0 && <div className="muted">No clinic appointments booked.</div>}
+        {orgAppts.map((a) => (
+          <div key={a.id} style={{ fontSize: 13.5, padding: '3px 0' }}>
+            <span className="badge resolved">{a.updatedAt ? 'MOVED' : 'CONFIRMED'}</span>
+            <b>{a.id}</b> · {a.when} · {a.practitioner} ({a.specialty}) · {a.patient}
+          </div>
+        ))}
+        <p className="muted" style={{ marginBottom: 0, marginTop: 8 }}>
+          Exposed availability (AU): <b>{openSlots.length}</b> open slots across{' '}
+          {state.practitioners.length} practitioners
+          {openSlots.length > 0 && <> — next: {openSlots[0].when} with {openSlots[0].practitioner}</>}.
+        </p>
       </div>
 
       <div className="card">
